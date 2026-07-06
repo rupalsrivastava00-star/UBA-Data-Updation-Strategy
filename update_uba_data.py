@@ -4,12 +4,14 @@ import zipfile
 import pandas as pd
 import requests
 
-# Verified UBA endpoint
+# Verified UBA endpoint for annual balances
 API_URL = "https://luftdaten.umweltbundesamt.de/api/air-data/v4/annualbalances/json"
 TARGET_STATIONS = ["1613", "1647", "1665", "1670"]
-YEARS = range(2016, 2027)
 
-# 100% verified official UBA component IDs
+# Query historical data from 2016 up through 2027
+YEARS = range(2016, 2028)
+
+# Official UBA component IDs mapping to pollutants
 POLLUTANTS = {
     1: "PM10", 2: "CO", 3: "O3", 4: "SO2", 5: "NO2",
     6: "PB", 7: "BAP", 8: "BEN", 9: "PM2.5", 10: "AS", 11: "CD", 12: "NI"
@@ -27,9 +29,12 @@ def fetch_fail_safe_data(component_id, year):
             indices = payload.get("indices", [])
             data_block = payload.get("data", [])
             items = data_block.items() if isinstance(data_block, dict) else [(None, r) for r in data_block]
+            
             for key, row in items:
                 row_list = list(row)
                 matched_station = None
+                
+                # Check if this row belongs to our target stations
                 if key and str(key) in TARGET_STATIONS:
                     matched_station = str(key)
                 else:
@@ -37,6 +42,7 @@ def fetch_fail_safe_data(component_id, year):
                         if str(item) in TARGET_STATIONS:
                             matched_station = str(item)
                             break
+                
                 if matched_station:
                     row_dict = {
                         "Year": int(year),
@@ -53,14 +59,16 @@ def fetch_fail_safe_data(component_id, year):
                                 row_dict[col_name] = row_list[idx]
                     extracted_rows.append(row_dict)
         return extracted_rows
-    except Exception:
+    except Exception as e:
+        print(f"  -> Connection or parsing error: {e}")
         return []
 
 def main():
-    print("=== Starting Fail-Safe UBA Air Quality Extraction ===")
+    print("=== Starting UBA Air Quality Extraction ===")
     
-    # Create a data folder to keep the repository clean
-    os.makedirs("data", exist_ok=True)
+    # Establish local data folder directory for output
+    output_dir = "data"
+    os.makedirs(output_dir, exist_ok=True)
     generated_files = []
     
     for comp_id, comp_code in POLLUTANTS.items():
@@ -71,7 +79,7 @@ def main():
             if records:
                 print(f" -> Found data for year {year}")
             all_records.extend(records)
-            time.sleep(0.05) # Polite network spacing
+            time.sleep(0.1) # Polite network spacing
             
         if all_records:
             df = pd.DataFrame(all_records)
@@ -80,8 +88,8 @@ def main():
             df = df[fixed_cols + other_cols]
             df.sort_values(by=["Station ID", "Year"], inplace=True)
             
-            # Save inside the 'data' folder
-            filename = os.path.join("data", f"leipzig_raw_{comp_code}.csv")
+            # Save files cleanly inside our data directory
+            filename = os.path.join(output_dir, f"leipzig_raw_{comp_code}.csv")
             df.to_csv(filename, index=False, encoding="utf-8-sig")
             generated_files.append(filename)
             print(f" -> SUCCESS: Saved {filename} ({len(df)} total data rows)\n")
@@ -89,16 +97,16 @@ def main():
             print(f" -> No records found in database for {comp_code}\n")
 
     if generated_files:
-        zip_filename = os.path.join("data", "leipzig_complete_raw_data.zip")
-        print(f"=== Bundling all sheets into final delivery: {zip_filename} ===")
+        zip_filename = os.path.join(output_dir, "leipzig_complete_raw_data.zip")
+        print(f"=== Bundling all sheets into final delivery archive: {zip_filename} ===")
         with zipfile.ZipFile(zip_filename, 'w') as archive:
             for file in generated_files:
-                # Add file to zip using its relative path to keep the folder structure clean
+                # Add file inside the zip without storing absolute folder paths
                 archive.write(file, os.path.basename(file))
                 os.remove(file)
         print("=== Complete! New data file compiled in 'data/' folder. ===")
     else:
-        print("\nExtraction failed to capture data rows. Verify your connection.")
+        print("\nExtraction failed to capture data rows. Verify your target list and connection.")
 
 if __name__ == "__main__":
     main()
