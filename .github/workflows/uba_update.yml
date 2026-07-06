@@ -1,0 +1,46 @@
+name: Scheduled UBA Data Update
+
+on:
+  schedule:
+    # Runs at 00:00 UTC on the 15th of every month to check for finalized data
+    - cron: '0 0 15 * *'
+  workflow_dispatch: # Allows you to run this manually with a play button!
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Essential permission to let the workflow save data back to your repo
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas requests
+
+    - name: Run UBA Extractor Script
+      run: python update_uba_data.py
+
+    - name: Commit and Push Changes
+      run: |
+        git config --global user.name "GitHub Action Bot"
+        git config --global user.email "actions@github.com"
+        
+        # Add files from the data folder created by the script
+        git add data/
+        
+        # Only commit if there are differences
+        if git diff --staged --quiet; then
+          echo "No new data changes found."
+        else
+          git commit -m "Automated UBA Data Update: $(date +'%Y-%m-%d')"
+          git push
+        fi
