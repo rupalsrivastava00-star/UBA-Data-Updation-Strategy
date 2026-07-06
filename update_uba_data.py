@@ -18,12 +18,17 @@ POLLUTANTS = {
 }
 
 def fetch_fail_safe_data(component_id, year):
+    """
+    Fetches raw annual balance data from the UBA API for a given pollutant and year,
+    filtering specifically for our TARGET_STATIONS.
+    """
     params = {"component": component_id, "year": year, "lang": "en"}
     extracted_rows = []
     try:
         response = requests.get(API_URL, params=params, timeout=20)
         if response.status_code != 200:
             return []
+        
         payload = response.json()
         if isinstance(payload, dict) and "data" in payload:
             indices = payload.get("indices", [])
@@ -34,7 +39,7 @@ def fetch_fail_safe_data(component_id, year):
                 row_list = list(row)
                 matched_station = None
                 
-                # Check if this row belongs to our target stations
+                # Check if this row belongs to our target stations (using row key or internal values)
                 if key and str(key) in TARGET_STATIONS:
                     matched_station = str(key)
                 else:
@@ -43,6 +48,7 @@ def fetch_fail_safe_data(component_id, year):
                             matched_station = str(item)
                             break
                 
+                # If a station matches, align the columns using the API indices
                 if matched_station:
                     row_dict = {
                         "Year": int(year),
@@ -79,7 +85,7 @@ def main():
             if records:
                 print(f" -> Found data for year {year}")
             all_records.extend(records)
-            time.sleep(0.1) # Polite network spacing
+            time.sleep(0.1)  # Polite network spacing to avoid rate limits
             
         if all_records:
             df = pd.DataFrame(all_records)
